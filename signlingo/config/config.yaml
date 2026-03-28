@@ -1,0 +1,80 @@
+app:
+  name: SignLingo
+  version: "1.0.0"
+  log_level: INFO
+  log_dir: logs
+  transcript_dir: transcripts
+
+camera:
+  device_id: 0
+  width: 640
+  height: 480
+  fps: 30
+
+preprocessing:
+  clahe_clip_limit: 2.0
+  clahe_grid_size: 8
+  swin_input_size: 224
+  vit_input_size: 224
+  normalize_mean: [0.485, 0.456, 0.406]
+  normalize_std: [0.229, 0.224, 0.225]
+
+detection:
+  max_num_hands: 2
+  min_detection_confidence: 0.7
+  min_tracking_confidence: 0.6
+  model_complexity: 0
+
+models:
+  device: cuda  # cuda or cpu
+  use_fp16: true
+  weights_path: models/weights/hstfe_v1.pth
+  swin_dim: 768
+  vit_dim: 512
+  cross_attention_heads: 4
+  cross_attention_output_dim: 1024
+  lstm_hidden_dim: 256
+  lstm_num_layers: 2
+  num_classes: 536
+  classifier_dropout: 0.3
+
+gating:
+  buffer_min_frames: 16
+  buffer_max_frames: 64
+  optical_flow_low_thresh: 0.2
+  optical_flow_high_thresh: 0.6
+  confidence_commit_threshold: 0.75
+  commit_debounce_frames: 8
+  confidence_drop_threshold: 0.15
+  confidence_drop_frames: 3
+  sentence_pause_threshold: 1.5
+
+translation:
+  ollama_base_url: http://localhost:11434
+  ollama_model: llama3.2:3b-instruct-q4_K_M
+  ollama_timeout: 10
+  default_language: hindi
+  languages:
+    - hindi
+    - tamil
+    - telugu
+    - malayalam
+    - marathi
+
+tts:
+  enabled: true
+  espeak_speed: 140
+  language_voices:
+    hindi: hi
+    tamil: ta
+    telugu: te
+    malayalam: ml
+    marathi: mr
+
+ui:
+  window_width: 1280
+  window_height: 720
+  camera_panel_ratio: 0.6
+  font_native_size: 24
+  font_roman_size: 14
+  history_max_items: 5
