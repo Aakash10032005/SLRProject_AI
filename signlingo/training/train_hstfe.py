@@ -10,7 +10,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -96,12 +96,17 @@ def main():
     log_dir = Path('training/logs')
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Dataset
-    dataset = ASLAlphabetDataset(args.dataset_path, transform=get_train_transforms())
-    val_size = max(1, int(len(dataset) * 0.1))
-    train_size = len(dataset) - val_size
-    train_ds, val_ds = random_split(dataset, [train_size, val_size])
-    val_ds.dataset.transform = get_val_transforms()
+    # Dataset — separate instances so val transforms never mutate train split
+    train_root = args.dataset_path
+    base_train = ASLAlphabetDataset(train_root, transform=get_train_transforms())
+    base_val = ASLAlphabetDataset(train_root, transform=get_val_transforms())
+    n = len(base_train)
+    val_size = max(1, int(n * 0.1))
+    train_size = n - val_size
+    indices = list(range(n))
+    train_indices, val_indices = indices[:train_size], indices[train_size:]
+    train_ds = Subset(base_train, train_indices)
+    val_ds = Subset(base_val, val_indices)
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=2)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=2)

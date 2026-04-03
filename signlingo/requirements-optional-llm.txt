@@ -1,0 +1,3 @@
+# Optional: enable translation.backend: ollama in config.yaml
+# Requires the Ollama desktop/service — see https://ollama.com
+# No extra Python packages beyond requests (already in requirements.txt).

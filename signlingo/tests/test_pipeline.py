@@ -38,10 +38,9 @@ def _make_config():
             'sentence_pause_threshold': 1.5
         },
         'translation': {
-            'ollama_base_url': 'http://localhost:11434',
-            'ollama_model': 'llama3.2:3b-instruct-q4_K_M',
-            'ollama_timeout': 10,
-            'default_language': 'hindi'
+            'backend': 'rule_based',
+            'prompts_path': 'config/language_prompts.yaml',
+            'default_language': 'hindi',
         },
         'tts': {'enabled': False}
     }
@@ -54,10 +53,8 @@ def test_pipeline_init_no_camera():
     config = _make_config()
     language_prompts = {'hindi': {'system_prompt': 'Test prompt'}}
 
-    with patch('src.pipeline.CameraManager') as MockCam, \
-         patch('src.pipeline.OllamaClient') as MockOllama:
+    with patch('src.pipeline.CameraManager') as MockCam:
         MockCam.return_value = MagicMock()
-        MockOllama.return_value.check_connection.return_value = False
 
         pipeline = SignLingoPipeline(config, language_prompts)
         assert pipeline is not None
@@ -72,10 +69,7 @@ def test_set_language():
     config = _make_config()
     language_prompts = {}
 
-    with patch('src.pipeline.CameraManager'), \
-         patch('src.pipeline.OllamaClient') as MockOllama:
-        MockOllama.return_value.check_connection.return_value = False
-
+    with patch('src.pipeline.CameraManager'):
         pipeline = SignLingoPipeline(config, language_prompts)
         pipeline.set_language('tamil')
         assert pipeline._active_language == 'tamil'
@@ -89,10 +83,7 @@ def test_callback_registration():
     config = _make_config()
     language_prompts = {}
 
-    with patch('src.pipeline.CameraManager'), \
-         patch('src.pipeline.OllamaClient') as MockOllama:
-        MockOllama.return_value.check_connection.return_value = False
-
+    with patch('src.pipeline.CameraManager'):
         pipeline = SignLingoPipeline(config, language_prompts)
 
         ui_cb = MagicMock()

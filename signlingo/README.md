@@ -1,12 +1,12 @@
 # SignLingo — Real-Time ASL Recognition + Indian Language Translation
 
-SignLingo is a privacy-preserving, fully offline system that recognizes American Sign Language (ASL) gestures in real time and translates them into grammatically correct Indian regional languages using a locally-hosted LLM.
+SignLingo recognizes American Sign Language (ASL) in real time and converts gloss to Indian regional languages via a **pluggable translation layer**. **Core recognition + default translation run fully offline** (rule-based lexicon/templates). An optional **Ollama** backend can be enabled in `config/config.yaml` for richer LLM phrasing—no cloud APIs required when using Ollama locally.
 
 **Novel contributions:**
 - HSTFe: Hybrid Swin-ViT Temporal Fusion Encoder for dual-stream sign recognition
-- CGME: Contextual Grammatical Morphing Engine for SOV Indian language translation
+- CGME: Contextual Grammatical Morphing Engine with pluggable backends (offline rules + optional local LLM)
 - Adaptive temporal gating with optical flow complexity estimation
-- 100% local inference — no cloud, no internet required after setup
+- Local inference: no mandatory cloud dependency; optional Ollama for advanced translation
 
 ---
 
@@ -23,20 +23,16 @@ SignLingo is a privacy-preserving, fully offline system that recognizes American
 
 ## Software Prerequisites
 
-### 1. Install Ollama
+### 1. (Optional) Ollama — for `translation.backend: ollama` only
+If you use the default **`translation.backend: rule_based`**, skip Ollama. To use a local LLM for translation:
 ```bash
-# Linux/macOS
+# Linux/macOS: https://ollama.com
 curl -fsSL https://ollama.com/install.sh | sh
-
-# Windows: Download from https://ollama.com
-```
-
-### 2. Pull the LLM model
-```bash
 ollama pull llama3.2:3b-instruct-q4_K_M
 ```
+Then set in `config/config.yaml`: `translation.backend: ollama` (see **Translation backends** below).
 
-### 3. Install espeak-ng (for TTS)
+### 2. Install espeak-ng (for TTS)
 ```bash
 # Linux
 sudo apt install espeak-ng
@@ -49,7 +45,7 @@ brew install espeak
 # Add espeak-ng to your system PATH
 ```
 
-### 4. Install Noto Sans fonts (for Indian script display)
+### 3. Install Noto Sans fonts (for Indian script display)
 ```bash
 # Linux
 sudo apt install fonts-noto
@@ -77,12 +73,19 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 ## Running
 
 ```bash
-# Start Ollama in a separate terminal
-ollama serve
-
-# Run SignLingo
+cd signlingo
+# If using translation.backend: ollama, run: ollama serve
 python run.py
 ```
+
+### Translation backends
+
+| `translation.backend` | Behavior |
+|------------------------|----------|
+| `rule_based` (default) | Offline templates + lexicon in `config/language_prompts.yaml` |
+| `ollama` | Uses local Ollama HTTP API (`ollama` block + legacy `ollama_*` keys) |
+
+Extend offline coverage by editing `templates`, `lexicon`, and per-language prompts in `language_prompts.yaml`.
 
 ---
 
@@ -169,7 +172,10 @@ Webcam → CameraManager → FramePreprocessor → HandDetector (MediaPipe)
 - Try changing `device_id` in `config/config.yaml` (try 0, 1, 2)
 - Verify with: `python -c "import cv2; print(cv2.VideoCapture(0).isOpened())"`
 
-**Ollama connection refused**
+**Translation looks like raw English gloss**
+- You are on `rule_based`: add entries under `lexicon` in `language_prompts.yaml`, or switch to `translation.backend: ollama` with `ollama serve` running.
+
+**Ollama connection refused** (only if `backend: ollama`)
 - Run `ollama serve` in a separate terminal and keep it running
 
 **No Indian script display**

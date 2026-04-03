@@ -50,9 +50,16 @@ gating:
   sentence_pause_threshold: 1.5
 
 translation:
+  backend: rule_based
+  prompts_path: config/language_prompts.yaml
   ollama_base_url: http://localhost:11434
   ollama_model: llama3.2:3b-instruct-q4_K_M
   ollama_timeout: 10
+  ollama:
+    base_url: http://localhost:11434
+    model: llama3.2:3b-instruct-q4_K_M
+    timeout: 10
+    availability_ttl_s: 15
   default_language: hindi
   languages:
     - hindi
@@ -70,6 +77,9 @@ tts:
     telugu: te
     malayalam: ml
     marathi: mr
+
+pipeline:
+  max_buffer_frames: 32
 
 ui:
   window_width: 1280

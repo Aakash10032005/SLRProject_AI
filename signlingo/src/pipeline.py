@@ -1,6 +1,8 @@
 import time
 import logging
 import threading
+from collections import deque
+
 import numpy as np
 import torch
 from pathlib import Path
@@ -16,7 +18,6 @@ from .models.fallback_recognizer import FallbackRecognizer
 from .gating.optical_flow import OpticalFlowAnalyzer
 from .gating.buffer_manager import AdaptiveBuffer
 from .gating.sign_boundary import SignBoundaryDetector
-from .translation.ollama_client import OllamaClient
 from .translation.cgme import CGME
 from .translation.sentence_composer import SentenceComposer
 from .output.tts_engine import TTSEngine
@@ -54,7 +55,8 @@ class SignLingoPipeline:
         cam_cfg = config.get('camera', {})
         self.camera = CameraManager(
             device_id=cam_cfg.get('device_id', 0),
-            fps=cam_cfg.get('fps', 30)
+            fps=cam_cfg.get('fps', 30),
+            config=config,
         )
         self.preprocessor = FramePreprocessor(self.device)
         self.detector = HandDetector(
@@ -86,32 +88,48 @@ class SignLingoPipeline:
             self.recognizer = FallbackRecognizer()
             self.hstfe = None
             self.classifier = None
+            self._fused_feature_buffer = None
         else:
-            self.hstfe = HSTFe.load_weights(weights_path, models_cfg)
+            self.hstfe, classifier_state = HSTFe.load_weights(weights_path, models_cfg)
             self.classifier = ClassifierHead(
                 input_dim=512,
                 num_classes=models_cfg.get('num_classes', 536),
                 dropout=models_cfg.get('classifier_dropout', 0.3)
             ).to(self.device)
+            if classifier_state is not None:
+                inc = self.classifier.load_state_dict(classifier_state, strict=False)
+                if inc.missing_keys or inc.unexpected_keys:
+                    logger.warning(
+                        "Classifier checkpoint: %d missing, %d unexpected keys",
+                        len(inc.missing_keys),
+                        len(inc.unexpected_keys),
+                    )
+                else:
+                    logger.info("Classifier head restored from checkpoint.")
             self.recognizer = None
+            max_buf = int(config.get('pipeline', {}).get('max_buffer_frames', 32))
+            self._fused_feature_buffer: deque = deque(maxlen=max_buf)
 
-        # Translation
-        trans_cfg = config.get('translation', {})
-        self.ollama = OllamaClient(
-            base_url=trans_cfg.get('ollama_base_url', 'http://localhost:11434'),
-            model=trans_cfg.get('ollama_model', 'llama3.2:3b-instruct-q4_K_M'),
-            timeout=trans_cfg.get('ollama_timeout', 10)
-        )
-        self.cgme = CGME(self.ollama, language_prompts)
+        # Translation (pluggable: rule_based offline default, optional ollama)
+        self.cgme = CGME(config, language_prompts)
         self.composer = SentenceComposer()
         self.tts = TTSEngine()
         self.transcript = TranscriptLogger(
             config.get('app', {}).get('transcript_dir', 'transcripts')
         )
 
-        self._ollama_available = self.ollama.check_connection()
-        if not self._ollama_available:
-            logger.warning("Ollama not detected — showing ASL gloss only")
+        logger.info(
+            "Translation backend: %s (available=%s)",
+            self.cgme.backend.backend_name,
+            self.cgme.backend.is_available(),
+        )
+
+    def _clear_fused_feature_buffer(self):
+        """Reset per-sign temporal window (bidirectional LSTM uses full stack each step)."""
+        if self._fused_feature_buffer is not None:
+            self._fused_feature_buffer.clear()
+        if self.hstfe is not None:
+            self.hstfe.reset_temporal_state()
 
     def set_ui_callback(self, callback: Callable):
         self._ui_callback = callback
@@ -166,6 +184,7 @@ class SignLingoPipeline:
             # 3. No hands
             if detection.num_hands == 0:
                 self._no_hand_counter += 1
+                self._clear_fused_feature_buffer()
                 if self._ui_callback:
                     self._ui_callback(detection.annotated_frame, '', 0.0,
                                       self.composer.get_gloss())
@@ -198,6 +217,7 @@ class SignLingoPipeline:
                 self.transcript.log_sign(label, confidence, time.time())
                 self._last_sign_time = time.time()
                 self._confidence_history.clear()
+                self._clear_fused_feature_buffer()
                 logger.info(f"Committed sign: {label} ({confidence:.2f})")
 
             # 9. Check sentence pause
@@ -210,6 +230,7 @@ class SignLingoPipeline:
                 gloss = self.composer.get_gloss()
                 self.composer.clear()
                 self._last_sign_time = 0.0
+                self._clear_fused_feature_buffer()
                 threading.Thread(
                     target=self._translate_and_emit,
                     args=(gloss,),
@@ -236,7 +257,13 @@ class SignLingoPipeline:
             full_frame = self.preprocessor.preprocess_for_vit(frame)
 
             with torch.no_grad():
-                features, conf = self.hstfe(hand_crop, full_frame, [])
+                fused = self.hstfe.encode_spatial(hand_crop, full_frame)
+                assert self._fused_feature_buffer is not None
+                self._fused_feature_buffer.append(fused.detach())
+                seq = torch.cat(list(self._fused_feature_buffer), dim=0).unsqueeze(0)
+                # Full sliding window each step; bi-LSTM needs full T (hidden=None).
+                out, _ = self.hstfe.forward_temporal(seq, hidden=None)
+                features = out[:, -1, :]
                 _, probs = self.classifier(features)
                 label, confidence = self.classifier.predict(probs)
             return label, confidence
@@ -251,13 +278,9 @@ class SignLingoPipeline:
 
     def _translate_and_emit(self, gloss: str):
         """Translate gloss and emit result (runs in thread)."""
-        if self._ollama_available:
-            result = self.cgme.translate(gloss, self._active_language)
-            native = result.native_text
-            roman = result.roman_text
-        else:
-            native = gloss
-            roman = ''
+        result = self.cgme.translate(gloss, self._active_language)
+        native = result.native_text
+        roman = result.roman_text
 
         self.transcript.log_translation(
             gloss, native, roman, self._active_language

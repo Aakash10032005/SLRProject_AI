@@ -11,9 +11,11 @@ logger = logging.getLogger(__name__)
 class CameraManager:
     """Async camera capture using a daemon thread and thread-safe queue."""
 
-    def __init__(self, device_id: int = 0, fps: int = 30):
+    def __init__(self, device_id: int = 0, fps: int = 30, config: dict | None = None):
         self.device_id = device_id
-        self.fps = fps
+        self.config = config or {}
+        cam = self.config.get('camera', {})
+        self.fps = int(cam.get('fps', fps))
         self._queue: queue.Queue = queue.Queue(maxsize=5)
         self._thread: threading.Thread | None = None
         self._running = False
@@ -30,20 +32,32 @@ class CameraManager:
 
     def start(self):
         """Start the camera capture thread."""
+        cam_cfg = self.config.get('camera', {})
+        req_w = int(cam_cfg.get('width', 640))
+        req_h = int(cam_cfg.get('height', 480))
+        req_fps = int(cam_cfg.get('fps', self.fps))
+
         self._cap = cv2.VideoCapture(self.device_id)
         if not self._cap.isOpened():
             logger.error(f"Camera device {self.device_id} not found. "
                          "Check device_id in config.yaml or try 0, 1, 2.")
             raise RuntimeError(f"Cannot open camera device {self.device_id}")
 
-        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        self._cap.set(cv2.CAP_PROP_FPS, self.fps)
+        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, req_w)
+        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, req_h)
+        self._cap.set(cv2.CAP_PROP_FPS, req_fps)
+
+        act_w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        act_h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        act_fps = float(self._cap.get(cv2.CAP_PROP_FPS))
+        logger.info(
+            "Camera %s → negotiated %sx%s @ %.1f FPS (requested %sx%s @ %s)",
+            self.device_id, act_w, act_h, act_fps, req_w, req_h, req_fps,
+        )
 
         self._running = True
         self._thread = threading.Thread(target=self._capture_loop, daemon=True)
         self._thread.start()
-        logger.info(f"Camera started on device {self.device_id}")
 
     def stop(self):
         """Stop the capture thread and release camera."""

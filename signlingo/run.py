@@ -74,21 +74,8 @@ def main():
         logger.error("PyTorch not installed. Run: pip install -r requirements.txt")
         sys.exit(1)
 
-    # Load language prompts
+    # Load language prompts (used by rule templates and optional LLM backends)
     language_prompts = load_language_prompts()
-
-    # Check Ollama
-    from src.translation.ollama_client import OllamaClient
-    trans_cfg = config.get('translation', {})
-    ollama = OllamaClient(
-        base_url=trans_cfg.get('ollama_base_url', 'http://localhost:11434'),
-        model=trans_cfg.get('ollama_model', 'llama3.2:3b-instruct-q4_K_M')
-    )
-    if not ollama.check_connection():
-        logger.warning(
-            "Ollama not running. Start with: ollama serve\n"
-            "SignLingo will display ASL gloss only until Ollama is available."
-        )
 
     # Initialize pipeline
     from src.pipeline import SignLingoPipeline

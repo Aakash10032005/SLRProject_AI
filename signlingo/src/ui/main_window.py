@@ -3,9 +3,8 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QMenuBar, QMenu, QStatusBar, QLabel, QMessageBox,
-    QFileDialog
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QMetaObject, Q_ARG, QObject
+from PyQt6.QtCore import Qt, pyqtSignal, QObject
 from PyQt6.QtGui import QAction, QFont
 
 from .camera_widget import CameraWidget
@@ -158,6 +157,7 @@ class MainWindow(QMainWindow):
     def _on_new_session(self):
         if self.pipeline:
             self.pipeline.composer.clear()
+            self.pipeline._clear_fused_feature_buffer()
             self.pipeline.transcript.close()
             from ..output.transcript_logger import TranscriptLogger
             self.pipeline.transcript = TranscriptLogger(
@@ -175,7 +175,7 @@ class MainWindow(QMainWindow):
             "SignLingo v1.0\n\n"
             "Real-time ASL recognition with Indian language translation.\n\n"
             "Architecture: HSTFe (Hybrid Swin-ViT Temporal Fusion Encoder)\n"
-            "Translation: Ollama CGME (Contextual Grammatical Morphing Engine)\n\n"
+            "Translation: pluggable CGME (default offline rule-based; optional Ollama)\n\n"
             "License: Apache 2.0"
         )
 
@@ -187,13 +187,16 @@ class MainWindow(QMainWindow):
             vram = torch.cuda.get_device_properties(0).total_memory // (1024**2)
             cuda_info = f"GPU: {gpu_name} ({vram} MB VRAM)"
 
-        ollama_status = "Connected" if (self.pipeline and self.pipeline._ollama_available) else "Not connected"
+        trans = ""
+        if self.pipeline and self.pipeline.cgme:
+            b = self.pipeline.cgme.backend
+            trans = f"{b.backend_name} ({'ready' if b.is_available() else 'unavailable'})"
 
         QMessageBox.information(
             self,
             "Hardware Status",
             f"GPU: {cuda_info}\n"
-            f"Ollama: {ollama_status}\n"
+            f"Translation: {trans or '—'}\n"
             f"Mode: {'HSTFe' if self.pipeline and not self.pipeline._use_fallback else 'Fallback Recognizer'}"
         )
 

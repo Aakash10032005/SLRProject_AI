@@ -97,3 +97,14 @@ marathi:
   example_input: WATER GIVE ME
   example_native: मला पाणी द्या
   example_roman: Malaa paaNi dyaa
+
+# Offline rule_based backend: output template per language ({gloss} = substituted text)
+templates:
+  hindi: "{gloss}"
+  tamil: "{gloss}"
+  telugu: "{gloss}"
+  malayalam: "{gloss}"
+  marathi: "{gloss}"
+
+# Optional extra gloss→word maps per language key (merged with built-in lexicon)
+lexicon: {}

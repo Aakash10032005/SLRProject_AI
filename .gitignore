@@ -15,7 +15,12 @@ venv.bak/
 
 # Project specific
 logs/
+transcripts/
 *.log
+*.ckpt
+build/
+dist/
+*.egg-info/
 models/weights/*.pt
 models/weights/*.pth
 models/weights/*.onnx

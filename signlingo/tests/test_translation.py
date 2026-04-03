@@ -43,8 +43,20 @@ def test_tts_engine_init():
     print("TTSEngine init PASSED")
 
 
+def test_rule_based_backend():
+    from src.translation.rule_backend import RuleBasedBackend
+    b = RuleBasedBackend(prompts_path='config/language_prompts.yaml')
+    assert b.is_available()
+    native, roman = b.translate('HELLO', 'hindi')
+    assert native
+    assert 'नमस्ते' in native
+    assert roman == ''
+    print("RuleBasedBackend HELLO→hindi PASSED")
+
+
 if __name__ == '__main__':
     test_ollama_connection()
     test_sentence_composer()
     test_tts_engine_init()
+    test_rule_based_backend()
     print("\nAll translation tests passed.")

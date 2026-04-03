@@ -39,8 +39,9 @@ def test_temporal_lstm():
     from src.models.temporal_lstm import TemporalLSTM
     model = TemporalLSTM()
     x = torch.randn(1, 8, 1024)
-    out = model(x)
-    assert out.shape == (1, 512), f"Expected (1,512), got {out.shape}"
+    out, hidden = model(x, None)
+    assert out.shape == (1, 8, 512), f"Expected (1,8,512), got {out.shape}"
+    assert isinstance(hidden, tuple) and len(hidden) == 2
     print(f"TemporalLSTM: {x.shape} -> {out.shape} PASSED")
 
 

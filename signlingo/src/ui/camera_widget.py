@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 from PyQt6.QtWidgets import QLabel
-from PyQt6.QtGui import QImage, QPixmap, QFont, QPainter, QColor, QPen
+from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtCore import Qt
 
 
@@ -38,9 +38,13 @@ class CameraWidget(QLabel):
         color = (34, 197, 94) if confidence > 0.75 else (234, 179, 8) if confidence > 0.5 else (239, 68, 68)
         cv2.rectangle(display, (0, h - 10), (bar_w, h), color, -1)
 
-        # Convert BGR -> RGB -> QImage
-        rgb = cv2.cvtColor(display, cv2.COLOR_BGR2RGB)
-        qimg = QImage(rgb.data, w, h, w * 3, QImage.Format.Format_RGB888)
+        # BGR → RGB; contiguous buffer + deep QImage copy so Qt does not reference freed ndarray
+        rgb = np.ascontiguousarray(cv2.cvtColor(display, cv2.COLOR_BGR2RGB))
+        h_rgb, w_rgb, ch = rgb.shape
+        bytes_per_line = ch * w_rgb
+        qimg = QImage(
+            rgb.data, w_rgb, h_rgb, bytes_per_line, QImage.Format.Format_RGB888
+        ).copy()
         pixmap = QPixmap.fromImage(qimg)
 
         # Scale to fit widget maintaining aspect ratio
