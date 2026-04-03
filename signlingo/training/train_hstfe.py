@@ -21,7 +21,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.models.hstfe import HSTFe
 from src.models.classifier_head import ClassifierHead
-from training.dataset_loader import ASLAlphabetDataset
+from training.dataset_loader import ASLAlphabetDataset, CombinedDataset
+from training.wlasl_dataset import WLASLLazyDataset
 from training.augmentations import get_train_transforms, get_val_transforms
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -170,7 +171,16 @@ def val_epoch(model, classifier, loader, criterion, device):
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train HSTFe for ASL recognition')
-    parser.add_argument('--dataset_path', type=str, required=True)
+    parser.add_argument('--dataset_path', type=str, required=True,
+                        help='Root path for the dataset')
+    parser.add_argument('--mode', type=str, default='alphabet',
+                        choices=['alphabet', 'wlasl_lite', 'wlasl', 'combined'],
+                        help=(
+                            'alphabet      — Kaggle ASL Alphabet images only\n'
+                            'wlasl_lite    — WLASL lazy loader, lite_manifest.json subset\n'
+                            'wlasl         — WLASL lazy loader, all classes\n'
+                            'combined      — alphabet + wlasl_lite merged'
+                        ))
     parser.add_argument('--epochs', type=int, default=40)
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--lr', type=float, default=1e-4)
@@ -178,6 +188,8 @@ def parse_args():
     parser.add_argument('--num_classes', type=int, default=536)
     parser.add_argument('--patience', type=int, default=10)
     parser.add_argument('--output_dir', type=str, default='models/weights')
+    parser.add_argument('--n_frames', type=int, default=8,
+                        help='Frames per WLASL clip (lazy loader). Default 8 fits 4 GB VRAM.')
     return parser.parse_args()
 
 
@@ -190,14 +202,62 @@ def main():
     log_dir = Path('training/logs')
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Separate dataset instances so val transforms never bleed into train
-    base_train = ASLAlphabetDataset(args.dataset_path, transform=get_train_transforms())
-    base_val = ASLAlphabetDataset(args.dataset_path, transform=get_val_transforms())
-    n = len(base_train)
-    val_size = max(1, int(n * 0.1))
-    indices = list(range(n))
-    train_ds = Subset(base_train, indices[:-val_size])
-    val_ds = Subset(base_val, indices[-val_size:])
+    # ── Dataset selection ─────────────────────────────────────────────────────
+    root = Path(args.dataset_path)
+    mode = args.mode
+
+    def _make_wlasl(transform, manifest=None):
+        return WLASLLazyDataset(
+            root, transform=transform, n_frames=args.n_frames,
+            manifest=manifest,
+        )
+
+    def _make_alphabet(transform):
+        return ASLAlphabetDataset(root, transform=transform)
+
+    if mode == 'alphabet':
+        base_train = _make_alphabet(get_train_transforms())
+        base_val   = _make_alphabet(get_val_transforms())
+
+    elif mode == 'wlasl_lite':
+        manifest = root / 'lite_manifest.json'
+        if not manifest.exists():
+            logger.error(
+                "lite_manifest.json not found. Run:\n"
+                "  python training/prepare_wlasl.py --root %s --mode lite", root
+            )
+            sys.exit(1)
+        base_train = _make_wlasl(get_train_transforms(), manifest=manifest)
+        base_val   = _make_wlasl(get_val_transforms(),   manifest=manifest)
+
+    elif mode == 'wlasl':
+        base_train = _make_wlasl(get_train_transforms())
+        base_val   = _make_wlasl(get_val_transforms())
+
+    elif mode == 'combined':
+        manifest = root / 'lite_manifest.json'
+        alpha_train = _make_alphabet(get_train_transforms())
+        alpha_val   = _make_alphabet(get_val_transforms())
+        wlasl_train = _make_wlasl(get_train_transforms(), manifest=manifest if manifest.exists() else None)
+        wlasl_val   = _make_wlasl(get_val_transforms(),   manifest=manifest if manifest.exists() else None)
+        base_train = CombinedDataset(alpha_train, wlasl_train)
+        base_val   = CombinedDataset(alpha_val,   wlasl_val)
+
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
+
+    logger.info("Dataset mode=%s  train=%d  val=%d", mode, len(base_train), len(base_val))
+
+    # For non-combined modes, split 90/10
+    if mode != 'combined':
+        n = len(base_train)
+        val_size = max(1, int(n * 0.1))
+        indices = list(range(n))
+        train_ds = Subset(base_train, indices[:-val_size])
+        val_ds   = Subset(base_val,   indices[-val_size:])
+    else:
+        train_ds = base_train
+        val_ds   = base_val
 
     train_loader = DataLoader(
         train_ds, batch_size=args.batch_size, shuffle=True,
