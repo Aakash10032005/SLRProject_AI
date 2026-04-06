@@ -271,7 +271,7 @@ def main():
     # Models
     model_config = {
         'device': args.device,
-        'use_fp16': device.type == 'cuda',
+        'use_fp16': False,   # FP16 disabled during training — use AMP autocast instead
         'swin_dim': 768, 'vit_dim': 512,
         'cross_attention_heads': 4,
         'cross_attention_output_dim': 1024,

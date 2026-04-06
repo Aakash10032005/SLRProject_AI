@@ -40,10 +40,22 @@ class ASLAlphabetDataset(Dataset):
         self._load_samples()
 
     def _load_samples(self):
-        classes = sorted(d.name for d in self.dataset_path.iterdir() if d.is_dir())
+        # Handle Kaggle's nested layout: <root>/asl_alphabet_train/asl_alphabet_train/<class>/
+        root = self.dataset_path
+        nested = root / 'asl_alphabet_train' / 'asl_alphabet_train'
+        single = root / 'asl_alphabet_train'
+        if nested.exists():
+            root = nested
+        elif single.exists() and any(single.iterdir()):
+            # check if single contains class dirs directly
+            first = next(single.iterdir(), None)
+            if first and first.is_dir():
+                root = single
+
+        classes = sorted(d.name for d in root.iterdir() if d.is_dir())
         self.label_to_idx = {cls: idx for idx, cls in enumerate(classes)}
         for cls_name in classes:
-            cls_dir = self.dataset_path / cls_name
+            cls_dir = root / cls_name
             for img_file in cls_dir.glob('*.jpg'):
                 self.samples.append((str(img_file), self.label_to_idx[cls_name]))
 
